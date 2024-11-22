@@ -42,11 +42,34 @@ def copy_to_clipboard():
         pyperclip.copy(st.session_state.generated_response)
         st.session_state.copied_to_clipboard = True
 
+def get_api_keys():
+    """Haalt API keys op uit Streamlit secrets"""
+    openai_key = st.secrets.get("OPENAI_API_KEY", "")
+    anthropic_key = st.secrets.get("ANTHROPIC_API_KEY", "")
+    return openai_key, anthropic_key
+
+def check_api_keys(selected_model: str) -> bool:
+    """Controleert of de benodigde API keys aanwezig zijn voor het geselecteerde model"""
+    openai_key, anthropic_key = get_api_keys()
+    
+    if "claude" in AVAILABLE_MODELS[selected_model]["model_name"].lower():
+        if not anthropic_key:
+            st.error("⚠️ Anthropic API key niet geconfigureerd in Streamlit secrets")
+            return False
+    else:
+        if not openai_key:
+            st.error("⚠️ OpenAI API key niet geconfigureerd in Streamlit secrets")
+            return False
+    return True
+
 def get_model_response(prompt: str, model_config: Dict) -> str:
     try:
+        openai_key, anthropic_key = get_api_keys()
+        
         if "claude" in model_config["model_name"].lower():
-            # Anthropic API aanroep
-            response = anthropic.messages.create(
+            import anthropic
+            client = anthropic.Anthropic(api_key=anthropic_key)
+            response = client.messages.create(
                 model=model_config["model_name"],
                 max_tokens=model_config["max_tokens"],
                 temperature=model_config["temperature"],
@@ -54,8 +77,9 @@ def get_model_response(prompt: str, model_config: Dict) -> str:
             )
             return response.content
         else:
-            # OpenAI API aanroep
-            response = openai.ChatCompletion.create(
+            import openai
+            client = openai.OpenAI(api_key=openai_key)
+            response = client.chat.completions.create(
                 model=model_config["model_name"],
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=model_config["max_tokens"],
@@ -98,7 +122,12 @@ def main():
         options=list(AVAILABLE_MODELS.keys()),
         key="model_selector"
     )
-    
+
+    # Controleer API keys voordat we verdergaan
+    if not check_api_keys(selected_model):
+        st.info("⚠️ Configureer de API keys in je Streamlit secrets")
+        st.stop()
+
     # Uitgebreide prompt types
     prompt_type = st.selectbox(
         "Type Prompt",
